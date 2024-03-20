@@ -1,42 +1,13 @@
 #!/usr/bin/env bash
 
 #
-# map-reduce tests
+# basic map-reduce test
 #
 
-# comment this out to run the tests without the Go race detector.
+#RACE=
+
+# comment this to run the tests without the Go race detector.
 RACE=-race
-
-if [[ "$OSTYPE" = "darwin"* ]]
-then
-  if go version | grep 'go1.17.[012345]'
-  then
-    # -race with plug-ins on x86 MacOS 12 with
-    # go1.17 before 1.17.6 sometimes crash.
-    RACE=
-    echo '*** Turning off -race since it may not work on a Mac'
-    echo '    with ' `go version`
-  fi
-fi
-
-TIMEOUT=timeout
-if timeout 2s sleep 1 > /dev/null 2>&1
-then
-  :
-else
-  if gtimeout 2s sleep 1 > /dev/null 2>&1
-  then
-    TIMEOUT=gtimeout
-  else
-    # no timeout command
-    TIMEOUT=
-    echo '*** Cannot find timeout command; proceeding without timeouts.'
-  fi
-fi
-if [ "$TIMEOUT" != "" ]
-then
-  TIMEOUT+=" -k 2s 180s "
-fi
 
 # run the test in a fresh sub-directory.
 rm -rf mr-tmp
@@ -45,8 +16,6 @@ cd mr-tmp || exit 1
 rm -f mr-*
 
 # make sure software is freshly built.
-(cd ../../mrapps && go clean)
-(cd .. && go clean)
 (cd ../../mrapps && go build $RACE -buildmode=plugin wc.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin indexer.go) || exit 1
 (cd ../../mrapps && go build $RACE -buildmode=plugin mtiming.go) || exit 1
@@ -66,28 +35,28 @@ failed_any=0
 
 # generate the correct output
 ../mrsequential ../../mrapps/wc.so ../pg*txt || exit 1
-sort mr-out-0 > mr-correct-wc.txt
+LC_COLLATE=C sort mr-out-0 > mr-correct-wc.txt
 rm -f mr-out*
 
 echo '***' Starting wc test.
 
-$TIMEOUT ../mrcoordinator ../pg*txt &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 pid=$!
 
 # give the coordinator time to create the sockets.
 sleep 1
 
 # start multiple workers.
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
-$TIMEOUT ../mrworker ../../mrapps/wc.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/wc.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/wc.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/wc.so &
 
 # wait for the coordinator to exit.
 wait $pid
 
 # since workers are required to exit when a job is completely finished,
 # and not before, that means the job has finished.
-sort mr-out* | grep . > mr-wc-all
+LC_COLLATE=C sort mr-out* | grep . > mr-wc-all
 if cmp mr-wc-all mr-correct-wc.txt
 then
   echo '---' wc test: PASS
@@ -106,19 +75,19 @@ rm -f mr-*
 
 # generate the correct output
 ../mrsequential ../../mrapps/indexer.so ../pg*txt || exit 1
-sort mr-out-0 > mr-correct-indexer.txt
+LC_COLLATE=C sort mr-out-0 > mr-correct-indexer.txt
 rm -f mr-out*
 
 echo '***' Starting indexer test.
 
-$TIMEOUT ../mrcoordinator ../pg*txt &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 sleep 1
 
 # start multiple workers
-$TIMEOUT ../mrworker ../../mrapps/indexer.so &
-$TIMEOUT ../mrworker ../../mrapps/indexer.so
+timeout -k 2s 180s ../mrworker ../../mrapps/indexer.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/indexer.so
 
-sort mr-out* | grep . > mr-indexer-all
+LC_COLLATE=C sort mr-out* | grep . > mr-indexer-all
 if cmp mr-indexer-all mr-correct-indexer.txt
 then
   echo '---' indexer test: PASS
@@ -135,11 +104,11 @@ echo '***' Starting map parallelism test.
 
 rm -f mr-*
 
-$TIMEOUT ../mrcoordinator ../pg*txt &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 sleep 1
 
-$TIMEOUT ../mrworker ../../mrapps/mtiming.so &
-$TIMEOUT ../mrworker ../../mrapps/mtiming.so
+timeout -k 2s 180s ../mrworker ../../mrapps/mtiming.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/mtiming.so
 
 NT=`cat mr-out* | grep '^times-' | wc -l | sed 's/ //g'`
 if [ "$NT" != "2" ]
@@ -166,11 +135,11 @@ echo '***' Starting reduce parallelism test.
 
 rm -f mr-*
 
-$TIMEOUT ../mrcoordinator ../pg*txt &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 sleep 1
 
-$TIMEOUT ../mrworker ../../mrapps/rtiming.so &
-$TIMEOUT ../mrworker ../../mrapps/rtiming.so
+timeout -k 2s 180s ../mrworker ../../mrapps/rtiming.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/rtiming.so
 
 NT=`cat mr-out* | grep '^[a-z] 2' | wc -l | sed 's/ //g'`
 if [ "$NT" -lt "2" ]
@@ -189,22 +158,22 @@ echo '***' Starting job count test.
 
 rm -f mr-*
 
-$TIMEOUT ../mrcoordinator ../pg*txt &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 sleep 1
 
-$TIMEOUT ../mrworker ../../mrapps/jobcount.so &
-$TIMEOUT ../mrworker ../../mrapps/jobcount.so
-$TIMEOUT ../mrworker ../../mrapps/jobcount.so &
-$TIMEOUT ../mrworker ../../mrapps/jobcount.so
+timeout -k 2s 180s ../mrworker ../../mrapps/jobcount.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/jobcount.so
+timeout -k 2s 180s ../mrworker ../../mrapps/jobcount.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/jobcount.so
 
 NT=`cat mr-out* | awk '{print $2}'`
-if [ "$NT" -eq "8" ]
+if [ "$NT" -ne "8" ]
 then
-  echo '---' job count test: PASS
-else
   echo '---' map jobs ran incorrect number of times "($NT != 8)"
   echo '---' job count test: FAIL
   failed_any=1
+else
+  echo '---' job count test: PASS
 fi
 
 wait
@@ -216,47 +185,31 @@ rm -f mr-*
 
 echo '***' Starting early exit test.
 
-DF=anydone$$
-rm -f $DF
-
-($TIMEOUT ../mrcoordinator ../pg*txt ; touch $DF) &
+timeout -k 2s 180s ../mrcoordinator ../pg*txt &
 
 # give the coordinator time to create the sockets.
 sleep 1
 
 # start multiple workers.
-($TIMEOUT ../mrworker ../../mrapps/early_exit.so ; touch $DF) &
-($TIMEOUT ../mrworker ../../mrapps/early_exit.so ; touch $DF) &
-($TIMEOUT ../mrworker ../../mrapps/early_exit.so ; touch $DF) &
+timeout -k 2s 180s ../mrworker ../../mrapps/early_exit.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/early_exit.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/early_exit.so &
 
-# wait for any of the coord or workers to exit.
+# wait for any of the coord or workers to exit
 # `jobs` ensures that any completed old processes from other tests
-# are not waited upon.
+# are not waited upon
 jobs &> /dev/null
-if [[ "$OSTYPE" = "darwin"* ]]
-then
-  # bash on the Mac doesn't have wait -n
-  while [ ! -e $DF ]
-  do
-    sleep 0.2
-  done
-else
-  # the -n causes wait to wait for just one child process,
-  # rather than waiting for all to finish.
-  wait -n
-fi
-
-rm -f $DF
+wait -n
 
 # a process has exited. this means that the output should be finalized
 # otherwise, either a worker or the coordinator exited early
-sort mr-out* | grep . > mr-wc-all-initial
+LC_COLLATE=C sort mr-out* | grep . > mr-wc-all-initial
 
 # wait for remaining workers and coordinator to exit.
 wait
 
 # compare initial and final outputs
-sort mr-out* | grep . > mr-wc-all-final
+LC_COLLATE=C sort mr-out* | grep . > mr-wc-all-final
 if cmp mr-wc-all-final mr-wc-all-initial
 then
   echo '---' early exit test: PASS
@@ -272,41 +225,41 @@ echo '***' Starting crash test.
 
 # generate the correct output
 ../mrsequential ../../mrapps/nocrash.so ../pg*txt || exit 1
-sort mr-out-0 > mr-correct-crash.txt
+LC_COLLATE=C sort mr-out-0 > mr-correct-crash.txt
 rm -f mr-out*
 
 rm -f mr-done
-($TIMEOUT ../mrcoordinator ../pg*txt ; touch mr-done ) &
+(timeout -k 2s 180s ../mrcoordinator ../pg*txt ; touch mr-done ) &
 sleep 1
 
 # start multiple workers
-$TIMEOUT ../mrworker ../../mrapps/crash.so &
+timeout -k 2s 180s ../mrworker ../../mrapps/crash.so &
 
 # mimic rpc.go's coordinatorSock()
 SOCKNAME=/var/tmp/824-mr-`id -u`
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    $TIMEOUT ../mrworker ../../mrapps/crash.so
+    timeout -k 2s 180s ../mrworker ../../mrapps/crash.so
     sleep 1
   done ) &
 
 ( while [ -e $SOCKNAME -a ! -f mr-done ]
   do
-    $TIMEOUT ../mrworker ../../mrapps/crash.so
+    timeout -k 2s 180s ../mrworker ../../mrapps/crash.so
     sleep 1
   done ) &
 
 while [ -e $SOCKNAME -a ! -f mr-done ]
 do
-  $TIMEOUT ../mrworker ../../mrapps/crash.so
+  timeout -k 2s 180s ../mrworker ../../mrapps/crash.so
   sleep 1
 done
 
 wait
 
 rm $SOCKNAME
-sort mr-out* | grep . > mr-crash-all
+LC_COLLATE=C sort mr-out* | grep . > mr-crash-all
 if cmp mr-crash-all mr-correct-crash.txt
 then
   echo '---' crash test: PASS
